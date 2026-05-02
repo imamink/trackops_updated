@@ -1,0 +1,97 @@
+{
+  "users": {
+    "adminUid123": {
+      "name": "TrackOps Admin",
+      "email": "admin@trackops.com",
+      "role": "admin",
+      "siteIds": ["TX07", "TX399", "TX417", "TX428", "TX431", "TX432"],
+      "active": true,
+      "createdAt": "SERVER_TIMESTAMP"
+    },
+    "regionalUid123": {
+      "name": "Khary Butler",
+      "email": "khary@trackops.com",
+      "role": "regional_leader",
+      "siteIds": ["TX07", "TX399", "TX417"],
+      "active": true,
+      "createdAt": "SERVER_TIMESTAMP"
+    },
+    "siteLeaderUid123": {
+      "name": "TX07 Site Lead",
+      "email": "tx07@trackops.com",
+      "role": "site_leader",
+      "siteIds": ["TX07"],
+      "active": true,
+      "createdAt": "SERVER_TIMESTAMP"
+    },
+    "assistantUid123": {
+      "name": "TX07 Assistant",
+      "email": "assistant.tx07@trackops.com",
+      "role": "assistant_site_lead",
+      "siteIds": ["TX07"],
+      "active": true,
+      "createdAt": "SERVER_TIMESTAMP"
+    },
+    "washTechUid123": {
+      "name": "TX07 Wash Tech",
+      "email": "wash.tx07@trackops.com",
+      "role": "wash_tech",
+      "siteIds": ["TX07"],
+      "active": true,
+      "createdAt": "SERVER_TIMESTAMP"
+    }
+  },
+  "sites": {
+    "TX07": {
+      "name": "TX07",
+      "regionId": "south-texas",
+      "active": true
+    },
+    "TX399": {
+      "name": "TX399",
+      "regionId": "south-texas",
+      "active": true
+    },
+    "TX417": {
+      "name": "TX417",
+      "regionId": "south-texas",
+      "active": true
+    },
+    "TX428": {
+      "name": "TX428",
+      "regionId": "south-texas",
+      "active": true
+    },
+    "TX431": {
+      "name": "TX431",
+      "regionId": "south-texas",
+      "active": true
+    },
+    "TX432": {
+      "name": "TX432",
+      "regionId": "south-texas",
+      "active": true
+    }
+  },
+  "tasks": {
+    "taskA": {
+      "title": "Check Tunnel Chemical Room",
+      "siteId": "TX07",
+      "assignedTo": "assistantUid123",
+      "createdBy": "siteLeaderUid123",
+      "status": "open",
+      "type": "manual",
+      "closedBy": null,
+      "closedAt": null,
+      "createdAt": "SERVER_TIMESTAMP"
+    }
+  },
+  "announcements": {
+    "announcementA": {
+      "siteId": "TX07",
+      "message": "Weekly detergent count due Friday before close.",
+      "createdBy": "siteLeaderUid123",
+      "createdAt": "SERVER_TIMESTAMP"
+    }
+  }
+}

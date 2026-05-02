@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasProfile() {
+      return signedIn() && userDoc().exists();
+    }
+
+    function isActive() {
+      return hasProfile() && userDoc().data.active == true;
+    }
+
+    function siteIds() {
+      return userDoc().data.siteIds;
+    }
+
+    function canAccessSite(siteId) {
+      return isActive() && siteId in siteIds();
+    }
+
+    match /users/{uid} {
+      allow read: if isActive() && request.auth.uid == uid;
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.active == true
+        && request.resource.data.accountType == "site"
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.siteIds.size() == 1;
+      allow update: if request.auth.uid == uid
+        && request.resource.data.active == resource.data.active
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.accountType == resource.data.accountType
+        && request.resource.data.siteIds == resource.data.siteIds;
+      allow delete: if false;
+    }
+
+    match /siteLogins/{siteName} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.siteNameNormalized == siteName;
+      allow update, delete: if false;
+    }
+
+    match /sites/{siteId} {
+      allow read: if canAccessSite(siteId);
+      allow write: if canAccessSite(siteId);
+    }
+
+    match /tasks/{taskId} {
+      allow read: if canAccessSite(resource.data.siteId);
+      allow create: if canAccessSite(request.resource.data.siteId);
+      allow update: if canAccessSite(resource.data.siteId);
+      allow delete: if canAccessSite(resource.data.siteId);
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if canAccessSite(resource.data.siteId);
+      allow create: if canAccessSite(request.resource.data.siteId);
+      allow update: if canAccessSite(resource.data.siteId);
+      allow delete: if canAccessSite(resource.data.siteId);
+    }
+  }
+}
