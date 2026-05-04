@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import {
   Bell,
   CalendarDays,
@@ -21,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { db, firebaseConfigReady } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 
 const weekDays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -71,6 +73,58 @@ function loadStoredJson(siteLabel, section, fallback) {
 
 function saveStoredJson(siteLabel, section, value) {
   window.localStorage.setItem(getStorageKey(siteLabel, section), JSON.stringify(value));
+}
+
+function hasStoredJson(siteLabel, section) {
+  try {
+    return window.localStorage.getItem(getStorageKey(siteLabel, section)) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function buildDefaultDashboardState(siteLabel, accountName) {
+  return {
+    tasks: buildWeeklyTasks(siteLabel),
+    inquiries: buildInitialInquiries(),
+    announcements: buildInitialAnnouncements(siteLabel),
+    team: buildInitialTeam(siteLabel, accountName),
+    activityLog: [],
+  };
+}
+
+function loadLocalDashboardState(siteLabel, accountName) {
+  const defaults = buildDefaultDashboardState(siteLabel, accountName);
+
+  return {
+    tasks: loadStoredJson(siteLabel, "tasks", defaults.tasks),
+    inquiries: loadStoredJson(siteLabel, "inquiries", defaults.inquiries),
+    announcements: loadStoredJson(siteLabel, "announcements", defaults.announcements),
+    team: loadStoredJson(siteLabel, "team", defaults.team),
+    activityLog: loadStoredJson(siteLabel, "activity-log", defaults.activityLog),
+  };
+}
+
+function hasAnyLocalDashboardState(siteLabel) {
+  return ["tasks", "inquiries", "announcements", "team", "activity-log"].some((section) =>
+    hasStoredJson(siteLabel, section)
+  );
+}
+
+function normalizeDashboardState(rawState, siteLabel, accountName) {
+  const defaults = buildDefaultDashboardState(siteLabel, accountName);
+
+  if (!rawState || typeof rawState !== "object") {
+    return defaults;
+  }
+
+  return {
+    tasks: Array.isArray(rawState.tasks) ? rawState.tasks : defaults.tasks,
+    inquiries: Array.isArray(rawState.inquiries) ? rawState.inquiries : defaults.inquiries,
+    announcements: Array.isArray(rawState.announcements) ? rawState.announcements : defaults.announcements,
+    team: Array.isArray(rawState.team) ? rawState.team : defaults.team,
+    activityLog: Array.isArray(rawState.activityLog) ? rawState.activityLog : defaults.activityLog,
+  };
 }
 
 function getTodayStamp() {
@@ -281,13 +335,56 @@ export default function SiteDashboard() {
   }, [activityLog]);
 
   useEffect(() => {
-    setTasks(loadStoredJson(storageSiteKey, "tasks", buildWeeklyTasks(siteLabel)));
-    setInquiries(loadStoredJson(storageSiteKey, "inquiries", buildInitialInquiries()));
-    setAnnouncements(loadStoredJson(storageSiteKey, "announcements", buildInitialAnnouncements(siteLabel)));
-    setTeam(loadStoredJson(storageSiteKey, "team", buildInitialTeam(siteLabel, accountName)));
-    setActivityLog(loadStoredJson(storageSiteKey, "activity-log", []));
-    setHasHydrated(true);
-  }, [accountName, siteLabel, storageSiteKey]);
+    let cancelled = false;
+
+    async function hydrateDashboard() {
+      setHasHydrated(false);
+
+      const localState = loadLocalDashboardState(storageSiteKey, accountName);
+      const applyState = (nextState) => {
+        if (cancelled) return;
+        setTasks(nextState.tasks);
+        setInquiries(nextState.inquiries);
+        setAnnouncements(nextState.announcements);
+        setTeam(nextState.team);
+        setActivityLog(nextState.activityLog);
+        setHasHydrated(true);
+      };
+
+      if (!firebaseConfigReady || !db || !profile?.uid) {
+        applyState(localState);
+        return;
+      }
+
+      try {
+        const siteRef = doc(db, "sites", storageSiteKey);
+        const siteSnap = await getDoc(siteRef);
+        const remoteState = siteSnap.exists()
+          ? normalizeDashboardState(siteSnap.data().dashboardState, siteLabel, accountName)
+          : null;
+
+        if (remoteState) {
+          applyState(remoteState);
+          return;
+        }
+
+        if (hasAnyLocalDashboardState(storageSiteKey)) {
+          applyState(localState);
+          return;
+        }
+
+        applyState(buildDefaultDashboardState(siteLabel, accountName));
+      } catch {
+        applyState(localState);
+      }
+    }
+
+    hydrateDashboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountName, profile?.uid, siteLabel, storageSiteKey]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -319,6 +416,37 @@ export default function SiteDashboard() {
     if (!hasHydrated) return;
     saveStoredJson(storageSiteKey, "activity-log", activityLog);
   }, [activityLog, hasHydrated, storageSiteKey]);
+
+  useEffect(() => {
+    if (!hasHydrated || !firebaseConfigReady || !db || !profile?.uid) return;
+
+    setDoc(
+      doc(db, "sites", storageSiteKey),
+      {
+        dashboardState: {
+          tasks,
+          inquiries,
+          announcements,
+          team,
+          activityLog,
+        },
+        name: siteLabel,
+        updatedAt: serverTimestamp(),
+        updatedBy: profile.uid,
+      },
+      { merge: true }
+    ).catch(() => {});
+  }, [
+    activityLog,
+    announcements,
+    hasHydrated,
+    inquiries,
+    profile?.uid,
+    siteLabel,
+    storageSiteKey,
+    tasks,
+    team,
+  ]);
 
   const filteredTasks = useMemo(() => {
     const term = query.trim().toLowerCase();

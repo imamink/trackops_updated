@@ -120,7 +120,7 @@ export function AuthProvider({ children }) {
           }
 
           const localOverrides = loadLocalProfileOverrides(firebaseUser.uid);
-          const nextProfile = { uid: firebaseUser.uid, ...profileSnap.data(), ...localOverrides };
+          const nextProfile = { uid: firebaseUser.uid, ...localOverrides, ...profileSnap.data() };
 
           if (!nextProfile.active) {
             setUser(currentUser);
