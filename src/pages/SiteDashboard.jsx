@@ -357,14 +357,27 @@ export default function SiteDashboard() {
       }
 
       try {
-        const siteRef = doc(db, "sites", storageSiteKey);
-        const siteSnap = await getDoc(siteRef);
-        const remoteState = siteSnap.exists()
-          ? normalizeDashboardState(siteSnap.data().dashboardState, siteLabel, accountName)
+        const userRef = doc(db, "users", profile.uid);
+        const [userSnap, siteSnap] = await Promise.all([
+          getDoc(userRef),
+          getDoc(doc(db, "sites", storageSiteKey)),
+        ]);
+
+        const remoteState = userSnap.exists()
+          ? normalizeDashboardState(userSnap.data().dashboardState, siteLabel, accountName)
           : null;
 
         if (remoteState) {
           applyState(remoteState);
+          return;
+        }
+
+        const legacySiteState = siteSnap.exists()
+          ? normalizeDashboardState(siteSnap.data().dashboardState, siteLabel, accountName)
+          : null;
+
+        if (legacySiteState) {
+          applyState(legacySiteState);
           return;
         }
 
@@ -421,7 +434,7 @@ export default function SiteDashboard() {
     if (!hasHydrated || !firebaseConfigReady || !db || !profile?.uid) return;
 
     setDoc(
-      doc(db, "sites", storageSiteKey),
+      doc(db, "users", profile.uid),
       {
         dashboardState: {
           tasks,
@@ -430,12 +443,12 @@ export default function SiteDashboard() {
           team,
           activityLog,
         },
-        name: siteLabel,
-        updatedAt: serverTimestamp(),
-        updatedBy: profile.uid,
+        dashboardUpdatedAt: serverTimestamp(),
       },
       { merge: true }
-    ).catch(() => {});
+    ).catch((error) => {
+      console.error("Unable to sync dashboard state to Firestore.", error);
+    });
   }, [
     activityLog,
     announcements,
