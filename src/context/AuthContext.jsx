@@ -15,6 +15,26 @@ import { auth, db, firebaseConfigError, firebaseConfigReady } from "../firebase"
 
 const AuthContext = createContext(null);
 
+function getLocalProfileKey(uid) {
+  return `trackops:profile:${uid}`;
+}
+
+function loadLocalProfileOverrides(uid) {
+  if (!uid) return {};
+
+  try {
+    const stored = window.localStorage.getItem(getLocalProfileKey(uid));
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalProfileOverrides(uid, overrides) {
+  if (!uid) return;
+  window.localStorage.setItem(getLocalProfileKey(uid), JSON.stringify(overrides));
+}
+
 function normalizeSiteName(value) {
   return value
     .trim()
@@ -99,7 +119,8 @@ export function AuthProvider({ children }) {
             return;
           }
 
-          const nextProfile = { uid: firebaseUser.uid, ...profileSnap.data() };
+          const localOverrides = loadLocalProfileOverrides(firebaseUser.uid);
+          const nextProfile = { uid: firebaseUser.uid, ...profileSnap.data(), ...localOverrides };
 
           if (!nextProfile.active) {
             setUser(currentUser);
@@ -234,6 +255,90 @@ export function AuthProvider({ children }) {
         setUser(auth.currentUser);
         setIsVerified(nextVerified);
         return nextVerified;
+      },
+      async updateProfileSettings({ username, photoDataUrl }) {
+        if (!auth || !db) throw new Error(firebaseConfigError);
+        if (!auth.currentUser || !profile) {
+          throw new Error("You must be signed in to update your profile.");
+        }
+
+        const trimmedUsername = username.trim();
+        if (!trimmedUsername) {
+          throw new Error("Enter a username.");
+        }
+
+        const nextNormalized = normalizeSiteName(trimmedUsername);
+        const currentNormalized = profile.siteNameNormalized || normalizeSiteName(profile.siteName || profile.name || "");
+
+        if (nextNormalized !== currentNormalized) {
+          const nextSiteLoginRef = doc(db, "siteLogins", nextNormalized);
+          const nextSiteLoginSnap = await getDoc(nextSiteLoginRef);
+
+          if (nextSiteLoginSnap.exists()) {
+            const loginOwner = nextSiteLoginSnap.data();
+            if (loginOwner.uid !== auth.currentUser.uid) {
+              throw new Error("That username is already in use.");
+            }
+          } else {
+            await setDoc(nextSiteLoginRef, {
+              email: profile.email,
+              siteName: trimmedUsername,
+              siteNameNormalized: nextNormalized,
+              uid: auth.currentUser.uid,
+              createdAt: serverTimestamp(),
+            });
+          }
+        }
+
+        const nextProfile = {
+          ...profile,
+          name: trimmedUsername,
+          nameNormalized: nextNormalized,
+          siteName: trimmedUsername,
+          siteNameNormalized: nextNormalized,
+          photoDataUrl: photoDataUrl || "",
+        };
+
+        saveLocalProfileOverrides(auth.currentUser.uid, {
+          name: nextProfile.name,
+          nameNormalized: nextProfile.nameNormalized,
+          siteName: nextProfile.siteName,
+          siteNameNormalized: nextProfile.siteNameNormalized,
+          photoDataUrl: nextProfile.photoDataUrl,
+        });
+
+        setProfile(nextProfile);
+
+        try {
+          await setDoc(
+            doc(db, "users", auth.currentUser.uid),
+            {
+              name: nextProfile.name,
+              nameNormalized: nextProfile.nameNormalized,
+              siteName: nextProfile.siteName,
+              siteNameNormalized: nextProfile.siteNameNormalized,
+              email: profile.email,
+              accountType: profile.accountType,
+              role: profile.role,
+              siteIds: profile.siteIds,
+              active: profile.active,
+              photoDataUrl: nextProfile.photoDataUrl,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+          return { savedLocally: true, savedRemotely: true };
+        } catch (err) {
+          if (err?.code === "permission-denied" || /insufficient permissions/i.test(err?.message || "")) {
+            return {
+              savedLocally: true,
+              savedRemotely: false,
+              warning:
+                "Profile changes were saved on this device. To sync them everywhere, publish the latest Firestore rules.",
+            };
+          }
+          throw err;
+        }
       },
     }),
     [user, profile, loading, error, isVerified]

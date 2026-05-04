@@ -20,7 +20,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const weekDays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -35,6 +35,7 @@ const defaultTaskForm = {
   repeating: false,
 };
 const defaultAnnouncementForm = {
+  id: null,
   title: "",
   body: "",
 };
@@ -45,12 +46,11 @@ const defaultInquiryForm = {
   email: "",
   inquiryFor: "",
 };
-const teamTemplate = [
-  { id: "lead", name: "Site Leader", role: "Leadership" },
-  { id: "assistant", name: "Assistant Site Leader", role: "Leadership" },
-  { id: "wash-1", name: "Wash Tech 1", role: "Wash Tech" },
-  { id: "wash-2", name: "Wash Tech 2", role: "Wash Tech" },
-];
+const defaultTeamForm = {
+  id: null,
+  name: "",
+  role: "Team Member",
+};
 
 function normalizeStorageKey(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -209,10 +209,33 @@ function buildInitialInquiries() {
   ];
 }
 
+function buildInitialAnnouncements(siteLabel) {
+  return [
+    {
+      id: "announcement-1",
+      title: "Weekly Leadership Announcement",
+      body: `Welcome back to ${siteLabel}. Review open tasks, update the schedule, and close completed work before the end of each shift.`,
+      author: "TrackOps",
+      weekRange: formatWeekRange(0),
+      createdAt: new Date().toLocaleString(),
+    },
+  ];
+}
+
+function buildInitialTeam(siteLabel, accountName) {
+  return [
+    { id: "team-lead", name: accountName, role: "Site Lead" },
+    { id: "team-assistant", name: `${siteLabel} Assistant`, role: "Assistant Site Leader" },
+    { id: "team-member-1", name: `${siteLabel} Team Member 1`, role: "Team Member" },
+  ];
+}
+
 export default function SiteDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { profile, logout } = useAuth();
-  const siteLabel = profile?.siteIds?.[0] || profile?.siteName || profile?.name || "Your Site";
+  const storageSiteKey = profile?.siteIds?.[0] || profile?.siteName || profile?.name || "Your Site";
+  const siteLabel = profile?.siteName || profile?.name || storageSiteKey;
   const accountName = profile?.name || profile?.siteName || siteLabel;
   const currentDay = getCurrentDayName();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -230,12 +253,10 @@ export default function SiteDashboard() {
   const [inquiryForm, setInquiryForm] = useState(defaultInquiryForm);
   const [inquiryCommentDrafts, setInquiryCommentDrafts] = useState({});
   const [announcementForm, setAnnouncementForm] = useState(defaultAnnouncementForm);
-  const [announcement, setAnnouncement] = useState(() => ({
-    title: "Weekly Leadership Announcement",
-    body: `Welcome back to ${siteLabel}. Review open tasks, update the schedule, and close completed work before the end of each shift.`,
-    author: "TrackOps",
-    weekRange: formatWeekRange(0),
-  }));
+  const [announcements, setAnnouncements] = useState(() => buildInitialAnnouncements(siteLabel));
+  const [announcementAction, setAnnouncementAction] = useState("");
+  const [teamForm, setTeamForm] = useState(defaultTeamForm);
+  const [team, setTeam] = useState(() => buildInitialTeam(siteLabel, accountName));
   const [selectedDay, setSelectedDay] = useState(currentDay);
   const [calendarWeekOffset, setCalendarWeekOffset] = useState(0);
   const [hasHydrated, setHasHydrated] = useState(false);
@@ -260,39 +281,44 @@ export default function SiteDashboard() {
   }, [activityLog]);
 
   useEffect(() => {
-    setTasks(loadStoredJson(siteLabel, "tasks", buildWeeklyTasks(siteLabel)));
-    setInquiries(loadStoredJson(siteLabel, "inquiries", buildInitialInquiries()));
-    setAnnouncement(
-      loadStoredJson(siteLabel, "announcement", {
-        title: "Weekly Leadership Announcement",
-        body: `Welcome back to ${siteLabel}. Review open tasks, update the schedule, and close completed work before the end of each shift.`,
-        author: "TrackOps",
-        weekRange: formatWeekRange(0),
-      })
-    );
-    setActivityLog(loadStoredJson(siteLabel, "activity-log", []));
+    setTasks(loadStoredJson(storageSiteKey, "tasks", buildWeeklyTasks(siteLabel)));
+    setInquiries(loadStoredJson(storageSiteKey, "inquiries", buildInitialInquiries()));
+    setAnnouncements(loadStoredJson(storageSiteKey, "announcements", buildInitialAnnouncements(siteLabel)));
+    setTeam(loadStoredJson(storageSiteKey, "team", buildInitialTeam(siteLabel, accountName)));
+    setActivityLog(loadStoredJson(storageSiteKey, "activity-log", []));
     setHasHydrated(true);
-  }, [siteLabel]);
+  }, [accountName, siteLabel, storageSiteKey]);
 
   useEffect(() => {
     if (!hasHydrated) return;
-    saveStoredJson(siteLabel, "tasks", tasks);
-  }, [hasHydrated, siteLabel, tasks]);
+    saveStoredJson(storageSiteKey, "tasks", tasks);
+  }, [hasHydrated, storageSiteKey, tasks]);
 
   useEffect(() => {
     if (!hasHydrated) return;
-    saveStoredJson(siteLabel, "inquiries", inquiries);
-  }, [hasHydrated, inquiries, siteLabel]);
+    saveStoredJson(storageSiteKey, "inquiries", inquiries);
+  }, [hasHydrated, inquiries, storageSiteKey]);
 
   useEffect(() => {
     if (!hasHydrated) return;
-    saveStoredJson(siteLabel, "announcement", announcement);
-  }, [announcement, hasHydrated, siteLabel]);
+    saveStoredJson(storageSiteKey, "announcements", announcements);
+  }, [announcements, hasHydrated, storageSiteKey]);
+
+  useEffect(() => {
+    if (announcements.length === 0 && announcementAction) {
+      setAnnouncementAction("");
+    }
+  }, [announcementAction, announcements]);
 
   useEffect(() => {
     if (!hasHydrated) return;
-    saveStoredJson(siteLabel, "activity-log", activityLog);
-  }, [activityLog, hasHydrated, siteLabel]);
+    saveStoredJson(storageSiteKey, "team", team);
+  }, [hasHydrated, storageSiteKey, team]);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    saveStoredJson(storageSiteKey, "activity-log", activityLog);
+  }, [activityLog, hasHydrated, storageSiteKey]);
 
   const filteredTasks = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -329,16 +355,6 @@ export default function SiteDashboard() {
     });
     return Array.from(groups.entries());
   }, [inquiries]);
-  const team = teamTemplate.map((person) => ({
-    ...person,
-    name:
-      person.id === "lead"
-        ? accountName
-        : person.id === "assistant"
-          ? `${siteLabel} Assistant`
-          : `${siteLabel} ${person.name}`,
-  }));
-
   const navItems = [
     { id: "home", label: "Home", icon: Home },
     { id: "tasks", label: "Tasks", icon: ClipboardList },
@@ -375,12 +391,30 @@ export default function SiteDashboard() {
     setSearchParams({ view: "new-task" });
   }
 
-  function goToAnnouncementForm() {
-    setAnnouncementForm({
-      title: announcement.title,
-      body: announcement.body,
-    });
+  function goToAnnouncementForm(announcement = null) {
+    if (announcement) {
+      setAnnouncementForm({
+        id: announcement.id,
+        title: announcement.title,
+        body: announcement.body,
+      });
+      setSearchParams({ view: "edit-announcement", announcementId: announcement.id });
+      return;
+    }
+
+    setAnnouncementForm(defaultAnnouncementForm);
     setSearchParams({ view: "new-announcement" });
+  }
+
+  function goToTeamForm(member = null) {
+    if (member) {
+      setTeamForm(member);
+      setSearchParams({ view: "edit-team-member", memberId: member.id });
+      return;
+    }
+
+    setTeamForm(defaultTeamForm);
+    setSearchParams({ view: "team-settings" });
   }
 
   function goToInquiryForm(inquiry = null) {
@@ -498,7 +532,7 @@ export default function SiteDashboard() {
     const assignedTo = taskForm.assignedTo.trim();
     const notes = taskForm.notes.trim();
 
-    if (!title || !assignedTo || !notes) return;
+    if (!title || !assignedTo) return;
 
     if (taskForm.id) {
       setTasks((current) =>
@@ -551,13 +585,80 @@ export default function SiteDashboard() {
     const body = announcementForm.body.trim();
     if (!title || !body) return;
 
-    setAnnouncement((current) => ({
-      ...current,
-      title,
-      body,
-      author: accountName,
-    }));
+    if (announcementForm.id) {
+      setAnnouncements((current) =>
+        current.map((announcement) =>
+          announcement.id === announcementForm.id
+            ? {
+                ...announcement,
+                title,
+                body,
+                author: accountName,
+                weekRange: formatWeekRange(calendarWeekOffset),
+              }
+            : announcement
+        )
+      );
+    } else {
+      setAnnouncements((current) => [
+        {
+          id: `announcement-${Date.now()}`,
+          title,
+          body,
+          author: accountName,
+          weekRange: formatWeekRange(calendarWeekOffset),
+          createdAt: new Date().toLocaleString(),
+        },
+        ...current,
+      ]);
+    }
     goToDashboard();
+  }
+
+  function handleDeleteAnnouncement(announcementId) {
+    setAnnouncements((current) => current.filter((announcement) => announcement.id !== announcementId));
+    setAnnouncementAction("");
+    if (announcementForm.id === announcementId) {
+      goToDashboard();
+    }
+  }
+
+  function handleAnnouncementActionClick(announcement) {
+    if (announcementAction === "edit") {
+      goToAnnouncementForm(announcement);
+      setAnnouncementAction("");
+      return;
+    }
+
+    if (announcementAction === "delete") {
+      handleDeleteAnnouncement(announcement.id);
+    }
+  }
+
+  function handleTeamSubmit(e) {
+    e.preventDefault();
+    const name = teamForm.name.trim();
+    const role = teamForm.role.trim();
+    if (!name || !role) return;
+
+    if (teamForm.id) {
+      setTeam((current) =>
+        current.map((member) => (member.id === teamForm.id ? { ...member, name, role } : member))
+      );
+    } else {
+      setTeam((current) => [{ id: `team-${Date.now()}`, name, role }, ...current]);
+    }
+
+    setSearchParams({ view: "team-settings" });
+    setTeamForm(defaultTeamForm);
+  }
+
+  function handleDeleteTeamMember(memberId) {
+    setTeam((current) => current.filter((member) => member.id !== memberId));
+    if (teamForm.id === memberId) {
+      setTeamForm(defaultTeamForm);
+      setSearchParams({ view: "team-settings" });
+    }
   }
 
   function handleInquirySubmit(e) {
@@ -568,7 +669,7 @@ export default function SiteDashboard() {
     const email = inquiryForm.email.trim();
     const inquiryFor = inquiryForm.inquiryFor.trim();
 
-    if (!guestName || !phone || !email || !inquiryFor) return;
+    if (!guestName || !phone || !inquiryFor) return;
 
     if (inquiryForm.id) {
       setInquiries((current) =>
@@ -665,11 +766,73 @@ export default function SiteDashboard() {
             <span>
               <Bell size={14} /> Announcement
             </span>
-            <h2>{announcement.title}</h2>
-            <p>{announcement.body}</p>
-            <small>
-              {announcement.author} • {announcement.weekRange}
-            </small>
+            {announcements.length === 0 && <p>No announcements posted yet.</p>}
+            <div className="announcement-list">
+              {announcements.map((announcement) => (
+                <article
+                  className={`announcement-item ${announcementAction ? "selectable" : ""}`}
+                  key={announcement.id}
+                  onClick={() => handleAnnouncementActionClick(announcement)}
+                  role={announcementAction ? "button" : undefined}
+                  tabIndex={announcementAction ? 0 : undefined}
+                  onKeyDown={
+                    announcementAction
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleAnnouncementActionClick(announcement);
+                          }
+                        }
+                      : undefined
+                  }
+                >
+                  <h1>{announcement.title}</h1>
+                  <p>{announcement.body}</p>
+                  <small>
+                    {announcement.author} • {announcement.weekRange}
+                  </small>
+                </article>
+              ))}
+            </div>
+            {announcements.length > 0 && (
+              <div className="announcement-controls">
+                <div className="announcement-actions">
+                  <button
+                    type="button"
+                    aria-label="Choose announcement to edit"
+                    className={announcementAction === "edit" ? "active" : ""}
+                    onClick={() => setAnnouncementAction((current) => (current === "edit" ? "" : "edit"))}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    className={`danger ${announcementAction === "delete" ? "active" : ""}`}
+                    type="button"
+                    aria-label="Choose announcement to delete"
+                    onClick={() => setAnnouncementAction((current) => (current === "delete" ? "" : "delete"))}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                  {announcementAction && (
+                    <button
+                      className="announcement-cancel-btn"
+                      type="button"
+                      aria-label="Cancel announcement action"
+                      onClick={() => setAnnouncementAction("")}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+                {announcementAction && (
+                  <span className="announcement-helper">
+                    {announcementAction === "edit"
+                      ? "Click an announcement to edit it."
+                      : "Click an announcement to delete it."}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <button className="announcement-btn" type="button" onClick={goToAnnouncementForm}>
             + Add Announcement
@@ -687,12 +850,20 @@ export default function SiteDashboard() {
           <div className="section-title">
             <h2>Current Week Calendar</h2>
             <div className="week-nav">
-              <button type="button" onClick={() => setCalendarWeekOffset((current) => current - 1)}>
-                Previous Week
+              <button
+                type="button"
+                aria-label="Previous week"
+                onClick={() => setCalendarWeekOffset((current) => current - 1)}
+              >
+                &lt;
               </button>
               <span>{formatWeekRange(calendarWeekOffset)}</span>
-              <button type="button" onClick={() => setCalendarWeekOffset((current) => current + 1)}>
-                Next Week
+              <button
+                type="button"
+                aria-label="Next week"
+                onClick={() => setCalendarWeekOffset((current) => current + 1)}
+              >
+                &gt;
               </button>
             </div>
           </div>
@@ -899,7 +1070,7 @@ export default function SiteDashboard() {
           <textarea
             value={taskForm.notes}
             onChange={(e) => setTaskForm((current) => ({ ...current, notes: e.target.value }))}
-            placeholder="Add task details"
+            placeholder="Add task details (optional)"
           />
 
           <div className="task-actions">
@@ -950,7 +1121,7 @@ export default function SiteDashboard() {
             type="email"
             value={inquiryForm.email}
             onChange={(e) => setInquiryForm((current) => ({ ...current, email: e.target.value }))}
-            placeholder="guest@email.com"
+            placeholder="guest@email.com (optional)"
           />
 
           <label>Inquiry Notes</label>
@@ -974,11 +1145,13 @@ export default function SiteDashboard() {
   }
 
   function renderAnnouncementFormPage() {
+    const isEditing = pageView === "edit-announcement";
+
     return (
       <section className="panel form-page-panel">
         <div className="section-title">
-          <h2>Add Announcement</h2>
-          <span>Post the latest update for the week.</span>
+          <h2>{isEditing ? "Edit Announcement" : "Add Announcement"}</h2>
+          <span>{isEditing ? "Update an existing announcement." : "Post the latest update for the week."}</span>
         </div>
         <form onSubmit={handleAnnouncementSubmit}>
           <label>Announcement Title</label>
@@ -997,7 +1170,7 @@ export default function SiteDashboard() {
 
           <div className="task-actions">
             <button className="primary-inline-btn" type="submit">
-              <Plus size={15} /> Save Announcement
+              <Plus size={15} /> {isEditing ? "Save Changes" : "Save Announcement"}
             </button>
             <button type="button" onClick={goToDashboard}>
               Cancel
@@ -1048,8 +1221,13 @@ export default function SiteDashboard() {
       <>
         <section className="panel team-section">
           <div className="section-title">
-            <h2>Team</h2>
-            <span>Shared account with full task access for this site</span>
+            <div>
+              <h2>Team</h2>
+              <span>Shared account with full task access for this site</span>
+            </div>
+            <button className="primary-inline-btn inquiry-create-btn" type="button" onClick={() => goToTeamForm()}>
+              <Plus size={15} /> Manage Team
+            </button>
           </div>
           <div className="leader-grid">
             {team.map((member) => (
@@ -1102,6 +1280,82 @@ export default function SiteDashboard() {
     );
   }
 
+  function renderTeamManagementPage() {
+    return (
+      <div className="task-columns">
+        <section className="panel form-page-panel">
+          <div className="section-title">
+            <h2>{teamForm.id ? "Edit Team Member" : "Team Settings"}</h2>
+            <span>Update the people shown in the Team section.</span>
+          </div>
+          <form onSubmit={handleTeamSubmit}>
+            <label>Name</label>
+            <input
+              value={teamForm.name}
+              onChange={(e) => setTeamForm((current) => ({ ...current, name: e.target.value }))}
+              placeholder="Enter team member name"
+            />
+
+            <label>Role</label>
+            <select
+              value={teamForm.role}
+              onChange={(e) => setTeamForm((current) => ({ ...current, role: e.target.value }))}
+            >
+              <option value="Site Lead">Site Lead</option>
+              <option value="Assistant Site Leader">Assistant Site Leader</option>
+              <option value="Team Member">Team Member</option>
+            </select>
+
+            <div className="task-actions">
+              <button className="primary-inline-btn" type="submit">
+                <Plus size={15} /> {teamForm.id ? "Save Member" : "Add Member"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTeamForm(defaultTeamForm);
+                  setSearchParams({ view: "team-settings" });
+                }}
+              >
+                Clear
+              </button>
+              <button type="button" onClick={goToDashboard}>
+                Back
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="panel">
+          <div className="section-title">
+            <h2>Current Team</h2>
+            <span>{team.length} people</span>
+          </div>
+          <div className="task-list">
+            {team.length === 0 && <p className="empty-day">No team members added yet.</p>}
+            {team.map((member) => (
+              <article className="leader-card" key={member.id}>
+                <div className="leader-avatar">
+                  <UserRound size={18} />
+                </div>
+                <h3>{member.name}</h3>
+                <p>{member.role}</p>
+                <div className="task-actions">
+                  <button type="button" onClick={() => goToTeamForm(member)}>
+                    <Pencil size={15} /> Edit
+                  </button>
+                  <button className="danger" type="button" onClick={() => handleDeleteTeamMember(member.id)}>
+                    <Trash2 size={15} /> Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   function renderPageContent() {
     if (pageView === "new-task" || pageView === "edit-task") {
       return renderTaskFormPage();
@@ -1111,8 +1365,12 @@ export default function SiteDashboard() {
       return renderInquiryFormPage();
     }
 
-    if (pageView === "new-announcement") {
+    if (pageView === "new-announcement" || pageView === "edit-announcement") {
       return renderAnnouncementFormPage();
+    }
+
+    if (pageView === "team-settings" || pageView === "edit-team-member") {
+      return renderTeamManagementPage();
     }
 
     if (activeTab === "home") return renderHome();
@@ -1192,7 +1450,34 @@ export default function SiteDashboard() {
               <button className="add-task-btn" type="button" onClick={() => goToTaskForm()}>
                 <Plus size={14} /> Add Task
               </button>
-              <div className="avatar">{accountName.slice(0, 2).toUpperCase()}</div>
+              <details className="profile-menu">
+                <summary className="avatar avatar-button" aria-label="Open profile menu">
+                  {profile?.photoDataUrl ? (
+                    <img src={profile.photoDataUrl} alt={`${accountName} profile`} />
+                  ) : (
+                    <span>{accountName.slice(0, 2).toUpperCase()}</span>
+                  )}
+                </summary>
+                <div className="profile-menu-dropdown">
+                  <div className="profile-menu-copy">
+                    <strong>{accountName}</strong>
+                    <span>{profile?.email}</span>
+                  </div>
+                  <button className="profile-menu-item" type="button" onClick={() => navigate("/profile")}>
+                    <UserRound size={14} /> Profile
+                  </button>
+                  <button
+                    className="profile-menu-item"
+                    type="button"
+                    onClick={() => setSearchParams({ view: "team-settings" })}
+                  >
+                    <Users size={14} /> Team
+                  </button>
+                  <button className="profile-menu-item" type="button" onClick={logout}>
+                    <LogOut size={14} /> Sign Out
+                  </button>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -1262,7 +1547,7 @@ function TaskCard({
         </span>
       </div>
 
-      <p>{task.notes}</p>
+      {task.notes ? <p>{task.notes}</p> : <p className="task-empty-copy">No notes added.</p>}
       <p className="task-submeta">
         Assigned by {task.assignedBy} • Reminder: {task.reminder}
       </p>
@@ -1351,7 +1636,7 @@ function InquiryCard({
             </div>
             <div className="inquiry-meta-item">
               <span>Email</span>
-              <strong>{inquiry.email}</strong>
+              <strong>{inquiry.email || "No email provided"}</strong>
             </div>
           </div>
 

@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import AccessDeniedPage from "./pages/AccessDeniedPage";
 import SiteDashboard from "./pages/SiteDashboard";
+import ProfilePage from "./pages/ProfilePage";
 
 function RoleHomeRedirect() {
   const { profile } = useAuth();
@@ -37,6 +38,15 @@ export default function App() {
         element={
           <ProtectedRoute>
             <SiteDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <ProfilePage />
           </ProtectedRoute>
         }
       />
